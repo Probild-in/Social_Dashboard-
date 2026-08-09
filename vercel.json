@@ -4,6 +4,6 @@
     "api/index.py": { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/cron/budget-check", "schedule": "0 */6 * * *" }
+    { "path": "/api/cron/budget-check", "schedule": "0 9 * * *" }
   ]
 }

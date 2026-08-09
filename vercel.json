@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/index.py": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/cron/budget-check", "schedule": "0 */6 * * *" }
+  ]
+}

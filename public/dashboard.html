@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Probild Pipeline Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --green: #22C55E; --bg: #0b0f0d; --card: #151a17; --border: #262e29; --text: #e8ede9; --muted: #8a9690; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, Segoe UI, Roboto, sans-serif; }
+  header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 20px; }
+  header h1 span { color: var(--green); }
+  #status { font-size: 13px; color: var(--muted); }
+  main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+  section { margin-bottom: 36px; }
+  section h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card img { width: 100%; border-radius: 6px; margin-bottom: 10px; max-height: 180px; object-fit: cover; }
+  .card .title { font-weight: 600; margin-bottom: 4px; }
+  .card .caption { font-size: 13px; color: var(--muted); max-height: 60px; overflow: hidden; margin-bottom: 8px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.active { background: rgba(34,197,94,0.15); color: var(--green); }
+  .pill.paused { background: rgba(148,163,184,0.15); color: #94a3b8; }
+  .pill.approved { background: rgba(34,197,94,0.15); color: var(--green); }
+  .pill.rejected { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .metric-row { display: flex; justify-content: space-between; font-size: 13px; margin-top: 4px; color: var(--muted); }
+  .metric-row b { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  a { color: var(--green); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  #token-gate { max-width: 400px; margin: 80px auto; text-align: center; }
+  #token-gate input { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); margin: 12px 0; }
+  #token-gate button { padding: 10px 20px; border-radius: 6px; border: none; background: var(--green); color: #06210f; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="token-gate">
+  <h2>Probild Pipeline Dashboard</h2>
+  <p style="color:var(--muted); font-size:13px;">Enter your dashboard token to continue.</p>
+  <input id="token-input" type="password" placeholder="Dashboard token" />
+  <br/>
+  <button onclick="saveTokenAndLoad()">View Dashboard</button>
+</div>
+
+<div id="dashboard" style="display:none;">
+  <header>
+    <h1>Probild <span>Pipeline</span> Dashboard</h1>
+    <div id="status">Loading...</div>
+  </header>
+  <main>
+    <section>
+      <h2>Active Ad Campaigns</h2>
+      <div class="grid" id="campaigns"></div>
+    </section>
+
+    <section>
+      <h2>Pending Approvals</h2>
+      <div class="grid" id="pending"></div>
+    </section>
+
+    <section>
+      <h2>Recently Published</h2>
+      <table id="published"><thead><tr><th>Template</th><th>Geo</th><th>Post</th><th>Ad Set</th><th>When</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section>
+      <h2>Recent Approval Decisions</h2>
+      <table id="decisions"><thead><tr><th>Template</th><th>Decision</th><th>When</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section>
+      <h2>Budget Check History</h2>
+      <table id="budget"><thead><tr><th>When</th><th>Results</th></tr></thead><tbody></tbody></table>
+    </section>
+  </main>
+</div>
+
+<script>
+function getToken() {
+  const url = new URL(window.location.href);
+  return url.searchParams.get('token') || localStorage.getItem('probild_dashboard_token');
+}
+
+function saveTokenAndLoad() {
+  const t = document.getElementById('token-input').value.trim();
+  if (!t) return;
+  localStorage.setItem('probild_dashboard_token', t);
+  init();
+}
+
+function timeAgo(unixSeconds) {
+  const diff = Math.floor(Date.now() / 1000) - unixSeconds;
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+function esc(s) { return (s || '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function loadData() {
+  const token = getToken();
+  if (!token) return;
+
+  const res = await fetch(`/api/dashboard-data?token=${encodeURIComponent(token)}`);
+  if (res.status === 401) {
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('token-gate').style.display = 'block';
+    localStorage.removeItem('probild_dashboard_token');
+    return;
+  }
+  const data = await res.json();
+
+  document.getElementById('token-gate').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+  // Campaigns
+  const campaignsEl = document.getElementById('campaigns');
+  campaignsEl.innerHTML = data.campaigns.length ? data.campaigns.map(c => `
+    <div class="card">
+      <div class="title">${esc(c.name || c.ad_set_id)}</div>
+      <span class="pill ${c.status === 'ACTIVE' ? 'active' : 'paused'}">${esc(c.status)}</span>
+      <div class="metric-row"><span>Daily budget</span><b>${c.daily_budget_inr ? '₹' + c.daily_budget_inr : '—'}</b></div>
+      <div class="metric-row"><span>Spend</span><b>₹${c.spend_inr.toFixed(0)}</b></div>
+      <div class="metric-row"><span>Conversations</span><b>${c.conversations}</b></div>
+      <div class="metric-row"><span>CPL</span><b>${c.cpl_inr !== null ? '₹' + c.cpl_inr : '—'}</b></div>
+    </div>
+  `).join('') : '<div class="empty">No active campaigns yet.</div>';
+
+  // Pending approvals
+  const pendingEl = document.getElementById('pending');
+  pendingEl.innerHTML = data.pending_approvals.length ? data.pending_approvals.map(p => `
+    <div class="card">
+      ${p.image_url ? `<img src="${esc(p.image_url)}" />` : ''}
+      <div class="title">${esc(p.template_name)}</div>
+      <div class="caption">${esc(p.caption)}</div>
+      <div class="metric-row"><span>Waiting</span><b>${timeAgo(p.created_at)}</b></div>
+    </div>
+  `).join('') : '<div class="empty">Nothing waiting on approval.</div>';
+
+  // Published table
+  const publishedBody = document.querySelector('#published tbody');
+  publishedBody.innerHTML = data.published_posts.length ? data.published_posts.map(p => `
+    <tr>
+      <td>${esc(p.template_name)}</td>
+      <td>${esc(p.geo)}</td>
+      <td><a href="${esc(p.permalink)}" target="_blank">View post</a></td>
+      <td>${esc(p.ad_set_id)}</td>
+      <td>${timeAgo(p.timestamp)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="empty">No posts published yet.</td></tr>';
+
+  // Decisions table
+  const decisionsBody = document.querySelector('#decisions tbody');
+  decisionsBody.innerHTML = data.recent_decisions.length ? data.recent_decisions.map(d => `
+    <tr>
+      <td>${esc(d.template_name)}</td>
+      <td><span class="pill ${d.decision}">${esc(d.decision)}</span></td>
+      <td>${timeAgo(d.timestamp)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="3" class="empty">No decisions yet.</td></tr>';
+
+  // Budget log table
+  const budgetBody = document.querySelector('#budget tbody');
+  budgetBody.innerHTML = data.budget_check_log.length ? data.budget_check_log.map(b => `
+    <tr>
+      <td>${timeAgo(b.timestamp)}</td>
+      <td>${esc(JSON.stringify(b.results))}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="2" class="empty">No budget checks run yet.</td></tr>';
+}
+
+function init() {
+  const token = getToken();
+  if (!token) {
+    document.getElementById('token-gate').style.display = 'block';
+    document.getElementById('dashboard').style.display = 'none';
+    return;
+  }
+  loadData();
+  setInterval(loadData, 30000); // auto-refresh every 30s
+}
+
+init();
+</script>
+</body>
+</html>

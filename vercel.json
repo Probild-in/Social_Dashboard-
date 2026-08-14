@@ -7,3 +7,4 @@
     { "path": "/api/cron/budget-check", "schedule": "0 9 * * *" }
   ]
 }
+
